@@ -442,6 +442,9 @@
                 <button class="btn btn-primary" id="packAllBtn" disabled onclick="packAllValid()">
                     打包全部有效项
                 </button>
+                <button class="btn btn-secondary" id="packConsolidatedBtn" disabled onclick="packConsolidated()" title="解压后直接展开所有包含的文件夹">
+                    生成汇总归档包
+                </button>
             </div>
         </div>
 
@@ -461,6 +464,18 @@
     </div>
 
     <div class="toast" id="toast"></div>
+
+    <div id="downloadDock" style="display:none; position:fixed; bottom:20px; right:20px; z-index:999; width:300px; background:#0f172a; border:1px solid #334155; border-radius:6px; padding:14px; box-shadow:0 10px 25px rgba(0,0,0,0.5); font-size:12px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #1e293b; padding-bottom:6px;">
+            <strong style="color:#f8fafc;">文件已生成</strong>
+            <button onclick="document.getElementById('downloadDock').style.display='none'" style="background:none; border:none; color:#94a3b8; cursor:pointer;">关闭</button>
+        </div>
+        <div id="dockFilename" style="font-family:monospace; color:#38bdf8; word-break:break-all; margin-bottom:10px;"></div>
+        <div style="display:flex; gap:8px;">
+            <a id="dockDownloadBtn" href="#" download="" style="flex:1; text-align:center; background:#2563eb; color:#fff; padding:6px 12px; border-radius:4px; text-decoration:none; font-weight:600;">点击保存</a>
+            <a id="dockOpenBtn" href="#" target="_blank" rel="noopener noreferrer" style="background:#334155; color:#cbd5e1; padding:6px 10px; border-radius:4px; text-decoration:none;">新窗口</a>
+        </div>
+    </div>
 
     <script>
         const CHAR_MAP = {
@@ -601,6 +616,7 @@
             const packableTotal = validCount + warnCount;
             document.getElementById('packAllBtn').disabled = packableTotal === 0;
             document.getElementById('packAllBtn').textContent = `打包全部有效项 (${packableTotal})`;
+            document.getElementById('packConsolidatedBtn').disabled = packableTotal === 0;
             document.getElementById('clearAllBtn').disabled = items.length === 0;
             document.getElementById('fixAllBtn').style.display = warnCount > 0 ? 'inline-flex' : 'none';
         }
@@ -627,6 +643,45 @@
             showToast('已修正 ' + count + ' 个校验位', 'success');
         }
 
+        function triggerDownload(blob, filename) {
+            const url = window.URL.createObjectURL(blob);
+            if (typeof saveAs === 'function') {
+                try {
+                    saveAs(blob, filename);
+                } catch (e) {
+                    console.warn(e);
+                }
+            }
+            try {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.rel = 'noopener noreferrer';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                    if (document.body.contains(a)) document.body.removeChild(a);
+                }, 1000);
+            } catch (e) {
+                console.warn(e);
+            }
+
+            const dock = document.getElementById('downloadDock');
+            if (dock) {
+                document.getElementById('dockFilename').innerText = filename;
+                const dlBtn = document.getElementById('dockDownloadBtn');
+                dlBtn.href = url;
+                dlBtn.download = filename;
+                const openBtn = document.getElementById('dockOpenBtn');
+                openBtn.href = url;
+                dock.style.display = 'block';
+            }
+
+            setTimeout(() => {
+                window.URL.revokeObjectURL(url);
+            }, 60000);
+        }
+
         async function packSingle(id) {
             const item = items.find(i => i.id === id);
             if (!item || !item.vin) return;
@@ -646,7 +701,7 @@
                     compressionOptions: { level: 6 }
                 });
 
-                saveAs(content, item.vin + '.zip');
+                triggerDownload(content, item.vin + '.zip');
                 showToast('打包完成: ' + item.vin + '.zip', 'success');
             } catch (e) {
                 console.error(e);
@@ -662,10 +717,48 @@
             for(let i=0; i<valids.length; i++) {
                 await packSingle(valids[i].id);
                 if (i < valids.length - 1) {
-                    await new Promise(r => setTimeout(r, 400));
+                    await new Promise(r => setTimeout(r, 600));
                 }
             }
             showToast('已触发下载全部文件', 'success');
+        }
+
+        async function packConsolidated() {
+            const valids = items.filter(i => validateVIN(i.vin).canPack);
+            if (valids.length === 0) return;
+
+            try {
+                showToast('正在生成汇总归档包...', 'warning');
+                const zip = new JSZip();
+                const vinCountMap = {};
+
+                for (let i = 0; i < valids.length; i++) {
+                    const item = valids[i];
+                    const cleanVin = item.vin.trim().toUpperCase();
+                    const ext = item.file.name.split('.').pop() || 'jpg';
+
+                    vinCountMap[cleanVin] = (vinCountMap[cleanVin] || 0) + 1;
+                    const count = vinCountMap[cleanVin];
+                    const fileName = count === 1 ? (cleanVin + '.' + ext) : (cleanVin + '_' + count + '.' + ext);
+
+                    // 直接在 ZIP 根路径下为每个 VIN 创建独立文件夹，解压后直接展开所有包含的文件夹
+                    const folder = zip.folder(cleanVin);
+                    folder.file(fileName, item.file);
+                }
+
+                const content = await zip.generateAsync({
+                    type: 'blob',
+                    compression: 'DEFLATE',
+                    compressionOptions: { level: 6 }
+                });
+
+                const archiveName = 'VIN_ARCHIVE_' + new Date().toISOString().slice(0, 10) + '.zip';
+                triggerDownload(content, archiveName);
+                showToast('汇总归档包生成完成（解压直接展开所有文件夹）', 'success');
+            } catch (e) {
+                console.error(e);
+                showToast('生成归档包失败', 'error');
+            }
         }
 
         function removeItem(id) {

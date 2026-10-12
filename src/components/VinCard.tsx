@@ -5,7 +5,7 @@ import {
   fixVinCheckDigit, 
   VinValidationResult 
 } from '../utils/vin';
-import { PackItem, formatBytes, packSingleVinZip } from '../utils/zip';
+import { PackItem, formatBytes, packSingleVinZip, DownloadResult } from '../utils/zip';
 
 interface VinCardProps {
   item: PackItem;
@@ -13,6 +13,8 @@ interface VinCardProps {
   onUpdateVin: (id: string, vin: string) => void;
   onRemove: (id: string) => void;
   onPreview: (item: PackItem) => void;
+  onToast?: (message: string, type: 'success' | 'warning' | 'error') => void;
+  onDownloadReady?: (result: DownloadResult) => void;
 }
 
 export const VinCard: React.FC<VinCardProps> = ({
@@ -21,6 +23,8 @@ export const VinCard: React.FC<VinCardProps> = ({
   onUpdateVin,
   onRemove,
   onPreview,
+  onToast,
+  onDownloadReady,
 }) => {
   const [isPacking, setIsPacking] = useState(false);
   const validation: VinValidationResult = validateVin(item.vin);
@@ -58,9 +62,12 @@ export const VinCard: React.FC<VinCardProps> = ({
 
     try {
       setIsPacking(true);
-      await packSingleVinZip(item);
+      const result = await packSingleVinZip(item);
+      onDownloadReady?.(result);
+      onToast?.(`已打包并触发下载: ${result.filename}`, 'success');
     } catch (err) {
       console.error('打包失败:', err);
+      onToast?.(`打包失败: ${err instanceof Error ? err.message : '处理异常'}`, 'error');
     } finally {
       setIsPacking(false);
     }

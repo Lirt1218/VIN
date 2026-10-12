@@ -4,6 +4,9 @@ import { ImageModal } from './components/ImageModal';
 import { validateVin, fixVinCheckDigit, sanitizeVinInput } from './utils/vin';
 import {
   PackItem,
+  DownloadResult,
+  triggerDownload,
+  formatBytes,
   packMultipleVinZipsIndividually,
   packAllVinsIntoConsolidatedZip,
 } from './utils/zip';
@@ -24,6 +27,9 @@ export default function App() {
     text: string;
     percentage: number;
   } | null>(null);
+
+  // 最近生成的文件就绪状态（用于直接下载与备用链接）
+  const [readyDownload, setReadyDownload] = useState<DownloadResult | null>(null);
 
   // 提示信息状态
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
@@ -305,7 +311,7 @@ export default function App() {
         percentage: 0,
       });
 
-      await packMultipleVinZipsIndividually(validItems, (cur, total, vin) => {
+      const results = await packMultipleVinZipsIndividually(validItems, (cur, total, vin) => {
         setPackProgress({
           current: cur,
           total,
@@ -314,7 +320,11 @@ export default function App() {
         });
       });
 
-      showToast(`已触发下载 ${validItems.length} 个文件`, 'success');
+      if (results.length > 0) {
+        setReadyDownload(results[results.length - 1]);
+      }
+
+      showToast(`已处理完成并触发下载 ${validItems.length} 个压缩包`, 'success');
     } catch (err) {
       console.error(err);
       showToast('批量打包处理失败', 'error');
@@ -345,7 +355,7 @@ export default function App() {
         percentage: 5,
       });
 
-      await packAllVinsIntoConsolidatedZip(
+      const result = await packAllVinsIntoConsolidatedZip(
         validItems,
         `VIN_ARCHIVE_${new Date().toISOString().slice(0, 10)}.zip`,
         (pct, text) => {
@@ -358,7 +368,8 @@ export default function App() {
         }
       );
 
-      showToast(`已生成并下载包含 ${validItems.length} 个项目的汇总归档文件`, 'success');
+      setReadyDownload(result);
+      showToast('已生成汇总归档包（解压直接展开所有 [VIN] 文件夹）', 'success');
     } catch (err) {
       console.error(err);
       showToast('生成归档文件失败', 'error');
@@ -377,7 +388,6 @@ export default function App() {
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>VIN 照片打包归档工具</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #0f172a; color: #f8fafc; min-height: 100vh; padding: 20px; }
@@ -429,6 +439,7 @@ export default function App() {
             <div style="display:flex; gap:8px;">
                 <button class="btn btn-secondary" id="clearBtn" disabled>清空列表</button>
                 <button class="btn btn-primary" id="packAllBtn" disabled>打包全部有效项</button>
+                <button class="btn btn-secondary" id="packConsolidatedBtn" disabled>生成汇总归档包</button>
             </div>
         </div>
         <div class="grid" id="cardsGrid"></div>
@@ -495,6 +506,7 @@ export default function App() {
             document.getElementById('statsBar').innerText = \`总计: \${list.length} | 校验通过: \${valid} | 校验位不符: \${warning} | 格式不合法: \${error}\`;
             document.getElementById('packAllBtn').disabled = packable === 0;
             document.getElementById('packAllBtn').innerText = \`打包全部有效项 (\${packable})\`;
+            document.getElementById('packConsolidatedBtn').disabled = packable === 0;
             document.getElementById('clearBtn').disabled = list.length === 0;
         }
 
@@ -516,6 +528,24 @@ export default function App() {
             }
         }
 
+        async function packConsolidated() {
+            const valids = list.filter(i => validate(i.vin).canPack);
+            if (valids.length === 0) return;
+            const zip = new JSZip();
+            const vinCount = {};
+            for(let i=0; i<valids.length; i++) {
+                const item = valids[i];
+                const cleanVin = item.vin.trim().toUpperCase();
+                const ext = item.file.name.split('.').pop() || 'jpg';
+                vinCount[cleanVin] = (vinCount[cleanVin] || 0) + 1;
+                const count = vinCount[cleanVin];
+                const fileName = count === 1 ? (cleanVin + '.' + ext) : (cleanVin + '_' + count + '.' + ext);
+                zip.folder(cleanVin).file(fileName, item.file);
+            }
+            const content = await zip.generateAsync({type:'blob'});
+            saveAs(content, 'VIN_ARCHIVE_' + new Date().toISOString().slice(0, 10) + '.zip');
+        }
+
         document.getElementById('fileIn').onchange = (e) => {
             Array.from(e.target.files).forEach(f => {
                 if(f.type.startsWith('image/')) list.push({ file: f, url: URL.createObjectURL(f), vin: '' });
@@ -524,19 +554,19 @@ export default function App() {
         };
         document.getElementById('clearBtn').onclick = () => { list = []; render(); };
         document.getElementById('packAllBtn').onclick = packAll;
+        document.getElementById('packConsolidatedBtn').onclick = packConsolidated;
     <\/script>
 </body>
 </html>`;
 
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'index.html';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const url = triggerDownload(blob, 'index.html');
+    setReadyDownload({
+      filename: 'index.html',
+      blob,
+      url,
+      size: blob.size,
+    });
     showToast('已导出单文件 index.html', 'success');
   };
 
@@ -583,6 +613,16 @@ export default function App() {
             >
               导出独立页面
             </button>
+
+            <a
+              href={typeof window !== 'undefined' ? window.location.href : '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-8 px-3 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center justify-center"
+              title="在独立标签页中打开，直接使用原生浏览器下载能力"
+            >
+              新窗口打开
+            </a>
           </div>
         </div>
       </header>
@@ -861,6 +901,8 @@ export default function App() {
                 onUpdateVin={handleUpdateVin}
                 onRemove={handleRemoveItem}
                 onPreview={(i) => setPreviewItem(i)}
+                onToast={showToast}
+                onDownloadReady={(res) => setReadyDownload(res)}
               />
             ))}
           </div>
@@ -887,6 +929,51 @@ export default function App() {
         title={previewItem?.file.name || ''}
         vin={previewItem?.vin || ''}
       />
+
+      {/* 文件就绪提示与备用下载链接 */}
+      {readyDownload && (
+        <aside
+          aria-label="下载文件浮层"
+          className="fixed bottom-6 right-6 z-50 w-80 bg-slate-900 border border-slate-700 rounded-md shadow-2xl p-4 text-xs space-y-3 text-slate-200"
+        >
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span className="font-semibold text-white">文件已生成</span>
+            <button
+              type="button"
+              onClick={() => setReadyDownload(null)}
+              className="text-slate-400 hover:text-white"
+            >
+              关闭
+            </button>
+          </div>
+          <div className="space-y-1">
+            <div className="font-mono text-white truncate" title={readyDownload.filename}>
+              {readyDownload.filename}
+            </div>
+            <div className="text-slate-400">
+              文件大小: {formatBytes(readyDownload.size)}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <a
+              href={readyDownload.url}
+              download={readyDownload.filename}
+              className="flex-1 h-8 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-md flex items-center justify-center transition"
+            >
+              点击保存文件
+            </a>
+            <a
+              href={readyDownload.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-8 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-md flex items-center justify-center transition"
+              title="在浏览器新标签页中打开/保存"
+            >
+              新窗口
+            </a>
+          </div>
+        </aside>
+      )}
 
       {/* 提示消息 */}
       {toast && (
