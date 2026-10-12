@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VIN 照片打包归档工具</title>
+    <!-- JSZip & FileSaver CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #090d16;
+            color: #f8fafc;
+            min-height: 100vh;
+            padding: 16px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 700;
+            color: #f8fafc;
+            margin-bottom: 4px;
+        }
+
+        .header p {
+            font-size: 13px;
+            color: #94a3b8;
+            line-height: 1.5;
+        }
+
+        .rule-bar {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 4px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            font-size: 12px;
+            color: #94a3b8;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .rule-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .rule-tag {
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .tag-red { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+        .tag-yellow { background: #451a03; color: #fde68a; border: 1px solid #78350f; }
+        .tag-green { background: #064e3b; color: #a7f3d0; border: 1px solid #065f46; }
+
+        .upload-zone {
+            background: #0f172a;
+            border: 1px dashed #334155;
+            border-radius: 6px;
+            padding: 32px 20px;
+            text-align: center;
+            color: #f8fafc;
+            margin-bottom: 20px;
+            transition: background 0.15s, border-color 0.15s;
+            cursor: pointer;
+        }
+
+        .upload-zone:hover {
+            background: #141f36;
+            border-color: #475569;
+        }
+
+        .upload-zone.drag-over {
+            background: #172554;
+            border-color: #3b82f6;
+        }
+
+        .upload-zone h3 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .upload-zone p {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .upload-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .toolbar {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 4px;
+            padding: 10px 14px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .stat-item strong {
+            color: #f8fafc;
+            margin-left: 2px;
+        }
+
+        .btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .btn {
+            height: 34px;
+            padding: 0 14px;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+        }
+
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+
+        .btn-orange { background: #e67e22; color: white; }
+        .btn-orange:hover:not(:disabled) { background: #d35400; }
+
+        .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }
+        .btn-secondary:hover:not(:disabled) { background: #334155; }
+
+        .btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            background: #ffffff;
+            color: #0f172a;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid #cbd5e1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-img-wrapper {
+            position: relative;
+            width: 100%;
+            height: 180px;
+            background: #020617;
+            cursor: pointer;
+            overflow: hidden;
+        }
+
+        .card-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .card-img-badge {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: rgba(2,6,23,0.8);
+            color: #cbd5e1;
+            font-size: 11px;
+            padding: 1px 6px;
+            border-radius: 2px;
+            font-family: monospace;
+        }
+
+        .card-body {
+            padding: 12px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .card-filename {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .vin-label-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #334155;
+        }
+
+        .vin-input {
+            width: 100%;
+            height: 36px;
+            padding: 0 10px;
+            font-size: 15px;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            border: 1px solid #94a3b8;
+            border-radius: 4px;
+            background: #ffffff;
+            color: #0f172a;
+            outline: none;
+            transition: border-color 0.15s;
+            text-transform: uppercase;
+        }
+
+        .vin-input.status-error { border-color: #ef4444; background: #fef2f2; color: #991b1b; }
+        .vin-input.status-warning { border-color: #e67e22; background: #fffbeb; color: #92400e; }
+        .vin-input.status-valid { border-color: #10b981; background: #f0fdf4; color: #065f46; }
+
+        .vin-status-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 20px;
+            margin-top: 4px;
+            margin-bottom: 10px;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .vin-status-text.error { color: #b91c1c; }
+        .vin-status-text.warning { color: #b45309; font-weight: 500; }
+        .vin-status-text.valid { color: #047857; font-weight: 500; }
+
+        .btn-fix {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fcd34d;
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 11px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 8px;
+            padding-top: 10px;
+            border-top: 1px solid #f1f5f9;
+        }
+
+        .card-actions .btn {
+            flex: 1;
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 50px 20px;
+            color: #94a3b8;
+            border: 1px dashed #1e293b;
+            border-radius: 4px;
+            background: #0f172a;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(2,6,23,0.85);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .modal.show { display: flex; }
+
+        .modal-content {
+            position: relative;
+            max-width: 90vw;
+            max-height: 85vh;
+        }
+
+        .modal-content img {
+            max-width: 100%;
+            max-height: 85vh;
+            border-radius: 4px;
+            border: 1px solid #334155;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: -36px;
+            right: 0;
+            background: transparent;
+            color: #cbd5e1;
+            border: none;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #0f172a;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            opacity: 0;
+            transition: transform 0.2s, opacity 0.2s;
+            z-index: 2000;
+            border: 1px solid #334155;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .toast.error { background: #7f1d1d; border-color: #ef4444; }
+        .toast.success { background: #064e3b; border-color: #10b981; }
+        .toast.warning { background: #78350f; border-color: #f59e0b; }
+
+        @media (max-width: 640px) {
+            body { padding: 12px; }
+            .toolbar { flex-direction: column; align-items: stretch; }
+            .btn-group { width: 100%; flex-direction: column; }
+            .btn-group .btn { width: 100%; }
+            .cards-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>VIN 照片归档工具</h1>
+            <p>单张照片生成独立 [VIN].zip，压缩包内含 [VIN]/ 目录及照片文件</p>
+        </header>
+
+        <div class="rule-bar">
+            <span>ISO 3779 校验规范：排除字母 I、O、Q，第 9 位为加权模 11 校验位</span>
+            <div class="rule-tags">
+                <span class="rule-tag tag-red">格式不合法</span>
+                <span class="rule-tag tag-yellow">校验位不符，请核对</span>
+                <span class="rule-tag tag-green">校验通过</span>
+            </div>
+        </div>
+
+        <div class="upload-zone" id="uploadZone">
+            <h3>点击或拖拽上传照片</h3>
+            <p>支持 JPG、PNG、WebP 格式，纯客户端离线处理</p>
+            <div class="upload-buttons">
+                <button class="btn btn-primary" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">
+                    选择文件
+                </button>
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); document.getElementById('cameraInput').click()">
+                    拍照上传
+                </button>
+            </div>
+            <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp,image/jpg" multiple>
+            <input type="file" id="cameraInput" accept="image/*" capture="environment">
+        </div>
+
+        <div class="toolbar">
+            <div class="stats" id="statsBar">
+                <div class="stat-item">校验通过:<strong id="validNum">0</strong></div>
+                <div class="stat-item">校验位不符:<strong id="warnNum">0</strong></div>
+                <div class="stat-item">格式不合法:<strong id="errNum">0</strong></div>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-secondary" id="fixAllBtn" style="display:none" onclick="fixAllWarnings()">
+                    修正全部校验位
+                </button>
+                <button class="btn btn-secondary" id="clearAllBtn" disabled onclick="clearAll()">
+                    清空列表
+                </button>
+                <button class="btn btn-primary" id="packAllBtn" disabled onclick="packAllValid()">
+                    打包全部有效项
+                </button>
+            </div>
+        </div>
+
+        <div class="cards-grid" id="cardsGrid">
+            <div class="empty-state">
+                <h3>暂无照片</h3>
+                <p>请点击上方区域选择文件或拍照上传</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="imageModal" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeModal()">关闭</button>
+            <img id="modalImg" src="" alt="预览图">
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const CHAR_MAP = {
+            'A':1,'B':2,'C':3,'D':4,'E':5,'F':6,'G':7,'H':8,
+            'J':1,'K':2,'L':3,'M':4,'N':5,'P':7,'R':9,
+            'S':2,'T':3,'U':4,'V':5,'W':6,'X':7,'Y':8,'Z':9,
+            '0':0,'1':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9
+        };
+        const WEIGHTS = [8,7,6,5,4,3,2,10,0,9,8,7,6,5,4,3,2];
+        const REGEX = /^[A-HJ-NPR-Z0-9]{17}$/;
+
+        let items = [];
+
+        function calcCheckDigit(vin) {
+            let sum = 0;
+            for(let i=0; i<17; i++) {
+                sum += (CHAR_MAP[vin[i]] || 0) * WEIGHTS[i];
+            }
+            const rem = sum % 11;
+            return rem === 10 ? 'X' : String(rem);
+        }
+
+        function validateVIN(vin) {
+            if(!vin || vin.length !== 17 || !REGEX.test(vin)) {
+                return { status: 'error', canPack: false, badgeText: '格式不合法', msg: '格式不合法' };
+            }
+            const expected = calcCheckDigit(vin);
+            if(vin[8] === expected) {
+                return { status: 'valid', canPack: true, badgeText: '校验通过', msg: '校验通过' };
+            }
+            return {
+                status: 'warning',
+                canPack: true,
+                badgeText: '校验位不符，请核对',
+                expected: expected,
+                msg: '校验位应为 ' + expected + '，当前为 ' + vin[8]
+            };
+        }
+
+        function sanitizeVIN(input) {
+            return (input || '').toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, '').slice(0, 17);
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+        }
+
+        function render() {
+            const grid = document.getElementById('cardsGrid');
+            grid.innerHTML = '';
+
+            let validCount = 0;
+            let warnCount = 0;
+            let errCount = 0;
+
+            if (items.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <h3>暂无照片</h3>
+                        <p>请点击上方区域选择文件或拍照上传</p>
+                    </div>
+                `;
+            } else {
+                items.forEach((item, index) => {
+                    const res = validateVIN(item.vin);
+                    if (res.status === 'valid') validCount++;
+                    else if (res.status === 'warning') warnCount++;
+                    else errCount++;
+
+                    const card = document.createElement('div');
+                    card.className = 'card';
+
+                    let packBtnClass = 'btn-primary';
+                    let packBtnText = '打包';
+                    let packBtnDisabled = '';
+
+                    if (res.status === 'warning') {
+                        packBtnClass = 'btn-orange';
+                        packBtnText = '仍然打包';
+                    } else if (res.status === 'valid') {
+                        packBtnClass = 'btn-primary';
+                        packBtnText = '打包';
+                    } else {
+                        packBtnClass = 'btn-secondary';
+                        packBtnText = '打包';
+                        packBtnDisabled = 'disabled';
+                    }
+
+                    card.innerHTML = `
+                        <div class="card-img-wrapper" onclick="previewImage('${item.preview}')">
+                            <img class="card-image" src="${item.preview}" alt="车辆照片">
+                            <div class="card-img-badge">#${index+1} ${formatBytes(item.file.size)}</div>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-filename" title="${item.file.name}">${item.file.name}</div>
+                            <div class="vin-label-row">
+                                <span>VIN</span>
+                                <span style="font-size:11px; font-weight:normal; color:#64748b;">${res.badgeText}</span>
+                            </div>
+                            <input type="text" 
+                                   class="vin-input status-${res.status}" 
+                                   value="${item.vin}" 
+                                   placeholder="请输入17位 VIN" 
+                                   maxlength="17">
+                            <div class="vin-status-row">
+                                <span class="vin-status-text ${res.status}">${res.msg}</span>
+                                ${res.expected ? `<button class="btn-fix" onclick="fixDigit('${item.id}', '${res.expected}')">修正为 ${res.expected}</button>` : ''}
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn ${packBtnClass}" ${packBtnDisabled} onclick="packSingle('${item.id}')">
+                                    ${packBtnText}
+                                </button>
+                                <button class="btn btn-secondary" onclick="removeItem('${item.id}')">
+                                    移除
+                                </button>
+                            </div>
+                        </div>
+                    `;
+
+                    const input = card.querySelector('.vin-input');
+                    input.addEventListener('input', (e) => {
+                        item.vin = sanitizeVIN(e.target.value);
+                        render();
+                    });
+
+                    grid.appendChild(card);
+                });
+            }
+
+            document.getElementById('validNum').textContent = validCount;
+            document.getElementById('warnNum').textContent = warnCount;
+            document.getElementById('errNum').textContent = errCount;
+
+            const packableTotal = validCount + warnCount;
+            document.getElementById('packAllBtn').disabled = packableTotal === 0;
+            document.getElementById('packAllBtn').textContent = `打包全部有效项 (${packableTotal})`;
+            document.getElementById('clearAllBtn').disabled = items.length === 0;
+            document.getElementById('fixAllBtn').style.display = warnCount > 0 ? 'inline-flex' : 'none';
+        }
+
+        function fixDigit(id, expected) {
+            const item = items.find(i => i.id === id);
+            if (item && item.vin.length === 17) {
+                item.vin = item.vin.slice(0, 8) + expected + item.vin.slice(9);
+                render();
+                showToast('已修正校验位为 ' + expected, 'success');
+            }
+        }
+
+        function fixAllWarnings() {
+            let count = 0;
+            items.forEach(item => {
+                const res = validateVIN(item.vin);
+                if (res.status === 'warning' && res.expected) {
+                    item.vin = item.vin.slice(0, 8) + res.expected + item.vin.slice(9);
+                    count++;
+                }
+            });
+            render();
+            showToast('已修正 ' + count + ' 个校验位', 'success');
+        }
+
+        async function packSingle(id) {
+            const item = items.find(i => i.id === id);
+            if (!item || !item.vin) return;
+            const res = validateVIN(item.vin);
+            if (!res.canPack) return;
+
+            try {
+                showToast('正在生成 ' + item.vin + '.zip...', 'warning');
+                const zip = new JSZip();
+                const ext = item.file.name.split('.').pop() || 'jpg';
+                const folder = zip.folder(item.vin);
+                folder.file(item.vin + '.' + ext, item.file);
+
+                const content = await zip.generateAsync({
+                    type: 'blob',
+                    compression: 'DEFLATE',
+                    compressionOptions: { level: 6 }
+                });
+
+                saveAs(content, item.vin + '.zip');
+                showToast('打包完成: ' + item.vin + '.zip', 'success');
+            } catch (e) {
+                console.error(e);
+                showToast('打包失败', 'error');
+            }
+        }
+
+        async function packAllValid() {
+            const valids = items.filter(i => validateVIN(i.vin).canPack);
+            if (valids.length === 0) return;
+
+            showToast('开始下载 ' + valids.length + ' 个文件...', 'warning');
+            for(let i=0; i<valids.length; i++) {
+                await packSingle(valids[i].id);
+                if (i < valids.length - 1) {
+                    await new Promise(r => setTimeout(r, 400));
+                }
+            }
+            showToast('已触发下载全部文件', 'success');
+        }
+
+        function removeItem(id) {
+            items = items.filter(i => i.id !== id);
+            render();
+        }
+
+        function clearAll() {
+            if (confirm('确认清空当前全部项目？')) {
+                items = [];
+                render();
+                showToast('已清空列表', 'success');
+            }
+        }
+
+        function handleFiles(files) {
+            const imageFiles = Array.from(files).filter(f => 
+                f.type.startsWith('image/') || /\.(jpe?g|png|webp)$/i.test(f.name)
+            );
+
+            if (imageFiles.length === 0) {
+                showToast('请选择 JPG、PNG、WebP 格式图片', 'error');
+                return;
+            }
+
+            imageFiles.forEach(f => {
+                const preview = URL.createObjectURL(f);
+                const match = f.name.match(/[A-HJ-NPR-Z0-9]{17}/i);
+                items.push({
+                    id: Math.random().toString(36).substring(2),
+                    file: f,
+                    preview: preview,
+                    vin: match ? sanitizeVIN(match[0]) : ''
+                });
+            });
+
+            render();
+            showToast('已添加 ' + imageFiles.length + ' 个文件', 'success');
+        }
+
+        function previewImage(url) {
+            document.getElementById('modalImg').src = url;
+            document.getElementById('imageModal').classList.add('show');
+        }
+
+        function closeModal() {
+            document.getElementById('imageModal').classList.remove('show');
+        }
+
+        function showToast(msg, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.className = 'toast ' + type + ' show';
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2500);
+        }
+
+        const zone = document.getElementById('uploadZone');
+        zone.onclick = () => document.getElementById('fileInput').click();
+        zone.ondragover = (e) => { e.preventDefault(); zone.classList.add('drag-over'); };
+        zone.ondragleave = () => zone.classList.remove('drag-over');
+        zone.ondrop = (e) => {
+            e.preventDefault();
+            zone.classList.remove('drag-over');
+            handleFiles(e.dataTransfer.files);
+        };
+
+        document.getElementById('fileInput').onchange = (e) => {
+            handleFiles(e.target.files);
+            e.target.value = '';
+        };
+
+        document.getElementById('cameraInput').onchange = (e) => {
+            handleFiles(e.target.files);
+            e.target.value = '';
+        };
+
+        render();
+    </script>
+</body>
+</html>

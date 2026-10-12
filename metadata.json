@@ -1,0 +1,6 @@
+{
+  "name": "VIN照片打包归档工具",
+  "description": "纯前端车架号(VIN)照片打包归档工具，支持图片本地预览、实时三态校验、按VIN生成{VIN}.zip压缩包并内含{VIN}/目录，安全无后台，支持移动端操作。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
